@@ -8,9 +8,6 @@
 *.so
 *.pyc
 *hdf5datasets/checkpoint
-*/TFmodels/*.pyc
-*/TFmodels/*
-*/fiddle/*.pyc
 
 # Packages #
 ############
@@ -74,7 +71,6 @@ Thumbs.db
 #
 analysis/*
 data/*
-visualization*
 results/*
 */data_prep/*
 
