@@ -26,6 +26,7 @@ flags.DEFINE_string('dataDir', '../data/hdf5datasets', 'Default data directory')
 flags.DEFINE_string('configuration', 'configurations.json', 'configuration file [json file]')
 flags.DEFINE_string('architecture', 'architecture.json', 'configuration file [json file]')
 flags.DEFINE_string('restorePath', '../results/test', 'Regions to validate [bed or gff files]')
+flags.DEFINE_string('lossEstimator', 'train', 'Loss estimator directory [train or previous runName]')
 flags.DEFINE_string('visualizePrediction', 'offline', 'Prediction profiles to be plotted [online or offline] ')
 flags.DEFINE_integer('maxEpoch', 1000, 'Number of epochs to run trainer.')
 flags.DEFINE_integer('batchSize', 100, 'Batch size.')
@@ -75,7 +76,7 @@ def main(_):
     global_step = tf.Variable(0, name='globalStep', trainable=False)
     train_estimator = True
     # define neural network
-    if train_estimator:
+    if FLAGS.lossEstimator=='train':
         chipseq_ph = tf.placeholder(tf.float32, [None, architecture['Modules']['chipseq']["input_height"],
                                                        architecture['Modules']['chipseq']["input_width"], 1],
                                           name='chipseq_input')
@@ -95,7 +96,7 @@ def main(_):
                                                                                   global_step=global_step,
                                                                                   var_list=d2c_trainables)
         
-        globalMinLoss = np.Inf
+        globalMinLoss = 1e6
         d2c_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='dnaseq'))
         sess = tf.Session()
         init = tf.global_variables_initializer()  # std out recommended this instead
@@ -115,10 +116,11 @@ def main(_):
 
             val_cost = sess.run(d2c_cost, feed_dict={d2c.input: validation_data['dnaseq'],
                                                                          chipseq_ph:validation_data['chipseq']})
+            print('Iteration no: {}'.format(it))
             print('Train cost: {}'.format(cost))
             print('Validation cost: {}'.format(val_cost))
             if val_cost < globalMinLoss:
-                globalMinLoss = cost.copy()
+                globalMinLoss = val_cost.copy()
                 save_path = d2c_saver.save(sess, os.path.join(FLAGS.savePath, 'd2c_model.ckpt'))
                 print('Model saved in file: %s' % FLAGS.savePath)
 
@@ -149,12 +151,12 @@ def main(_):
         init = tf.global_variables_initializer()  # std out recommended this instead
         sess.run(init)
         d2c_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='dnaseq'))
-        d2c_saver.restore(sess, os.path.join(model_path, 'd2c_model.ckpt'))
+        d2c_saver.restore(sess, os.path.join(FLAGS.lossEstimator, 'd2c_model.ckpt'))
 
         c2d_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='chipseq'))
         print('Session initialized.')
         print('Training the predictor network')
-        globalMinLoss=np.Inf
+        globalMinLoss = 1e6
         for it in range(100):
             for sub_iter in tq(range(10)):
                 train_batch = batcher.next()
@@ -163,10 +165,11 @@ def main(_):
             cost /= 10.
             val_cost = sess.run(c2d_cost, feed_dict={c2d.input: validation_data['chipseq']})
 
+            print('Iteration no: {}'.format(it))
             print('Train cost: {}'.format(cost))
             print('Validation cost: {}'.format(val_cost))
             if val_cost < globalMinLoss:
-                globalMinLoss = cost.copy()
+                globalMinLoss = val_cost.copy()
                 save_path = c2d_saver.save(d2c_saver, os.path.join(FLAGS.savePath, 'c2d_model.ckpt'))
                 print('Model saved in file: %s' % FLAGS.savePath)
 
