@@ -104,6 +104,7 @@ def main(_):
         print('Session initialized.')
         print('Training the estimator network')
 
+##
         for it in range(100):
             cost = 0
             for sub_iter in tq(range(10)):
@@ -165,8 +166,32 @@ def main(_):
         idx = np.argsort(validation_data['chipseq'].reshape(validation_data['chipseq'].shape[0], -1).sum(axis=1))
         idx = idx[-5:]
         input_for_pred = validation_data['chipseq'][idx]
+        #####
+        it = 0
+        feed_d = {c2d.input: input_for_pred}
+        feed_d.update({K.learning_phase(): 0})
+        weights, pred_vec, chipseq_pred = sess.run([dna_before_softmax, dna_after_softmax, chipseq_after_softmax],
+                                                   feed_d)
+        predicted_dict = {'dna_before_softmax': weights,
+                          'prediction': pred_vec}
+        predicted_dict2 = {'chipseq': chipseq_pred}
 
-        for it in range(100):
+        pickle.dump(predicted_dict,
+                    open(os.path.join(FLAGS.resultsDir, FLAGS.runName, 'pred_viz_{}.pck'.format(it)),
+                         "wb"))
+
+        if FLAGS.visualizePrediction == 'online':
+            viz.plot_prediction(predicted_dict2, {'chipseq': input_for_pred},
+                                name='iteration_900{}'.format(it),
+                                save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName),
+                                strand=config['Options']['Strand'])
+            viz.visualize_dna(weights, pred_vec,
+                              name='iteration_{}'.format(it),
+                              save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName))
+
+        ############
+
+        for it in range(1,101):
             cost = 0
             for sub_iter in tq(range(10)):
                 train_batch = batcher.next()
