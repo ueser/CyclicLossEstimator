@@ -161,24 +161,8 @@ class ConvolutionalContainer(BaseTrackContainer):
                         name='representation')(net)
 
 
-def cyclic_loss(y_true, y_pred):
-    ## Strategy-3: Get a loss estimator from the input reconstruction
-
-    DS_container_from_pred = ConvolutionalContainer('dnaseq', architecture=self.architecture,
-                                                    input=self.predictions[key])
-    cs_pred = tf.nn.softmax(DS_container_from_pred.representation, name='ds_softmax')
-    to_pred = {}
-    for trck in self.inputs.keys():
-        positive_strand = tf.slice(self.inputs[trck], [0, 0, 0, 0], [-1, 1, -1, -1])
-        to_pred[trck] = transform_track(positive_strand, option='pdf')
-        loss_estimator = kullback_leibler_divergence(to_pred[trck], cs_pred)
-        self.cost += tf.reduce_mean(loss_estimator)
-
-    self._build_dna_loss_estimator(track_name='dnaseq')
-    pass
-
 def kl_loss(y_true, y_pred):
-    return tf.reduce_mean(kullback_leibler_divergence((y_true, y_pred]))
+    return tf.reduce_mean(kullback_leibler_divergence(y_true, y_pred))
 
 def per_bp_accuracy(y_true, y_pred):
     pass
