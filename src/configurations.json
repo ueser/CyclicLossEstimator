@@ -34,7 +34,7 @@
     "Outputs":["chipseq"],
     "Freeze":[],
     "Reload":[],
-    "Strand":"Single",
+    "Strand":"Double",
     "DataName":"NSMSDSRSCSTSRI_500bp"
   }
 }
