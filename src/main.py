@@ -123,11 +123,12 @@ def main(_):
                 globalMinLoss = val_cost.copy()
                 save_path = d2c_saver.save(sess, os.path.join(FLAGS.savePath, 'd2c_model.ckpt'))
                 print('Model saved in file: %s' % FLAGS.savePath)
+        sess.close()
 
     else:
+
         c2d = ConvolutionalContainer('chipseq',
                                      architecture=architecture)
-
         with tf.variable_scope('chipseq'):
             dna_before_softmax = Dense(4*architecture['Modules']['dnaseq']['input_width'], name='FC_before_softmax')(c2d.representation)
             dna_before_softmax = tf.reshape(dna_before_softmax,
@@ -141,7 +142,8 @@ def main(_):
             chipseq_before_softmax = Dense(2*architecture['Modules']['chipseq']['input_width'], name='FC_before_softmax')(d2c_est.representation)
             chipseq_after_softmax = tf.nn.softmax(chipseq_before_softmax, name='softmax')
 
-        c2d_cost = kl_loss(c2d.input, chipseq_after_softmax)
+        chipseq_pdf = transform_track(c2d.input)
+        c2d_cost = kl_loss(chipseq_pdf, chipseq_after_softmax)
 
         c2d_trainables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='chipseq')
         c2d_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learningRate).minimize(c2d_cost,
@@ -150,14 +152,17 @@ def main(_):
         sess = tf.Session()
         init = tf.global_variables_initializer()  # std out recommended this instead
         sess.run(init)
+
         d2c_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='dnaseq'))
-        d2c_saver.restore(sess, os.path.join(FLAGS.lossEstimator, 'd2c_model.ckpt'))
+        d2c_saver.restore(sess, os.path.join(FLAGS.resultsDir, FLAGS.lossEstimator, 'd2c_model.ckpt'))
 
         c2d_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='chipseq'))
         print('Session initialized.')
         print('Training the predictor network')
         globalMinLoss = 1e6
+
         for it in range(100):
+            cost = 0
             for sub_iter in tq(range(10)):
                 train_batch = batcher.next()
                 _, sub_cost = sess.run([c2d_optimizer, c2d_cost], feed_dict={c2d.input:train_batch['chipseq']})
@@ -170,10 +175,10 @@ def main(_):
             print('Validation cost: {}'.format(val_cost))
             if val_cost < globalMinLoss:
                 globalMinLoss = val_cost.copy()
-                save_path = c2d_saver.save(d2c_saver, os.path.join(FLAGS.savePath, 'c2d_model.ckpt'))
+                save_path = c2d_saver.save(sess, os.path.join(FLAGS.savePath, 'c2d_model.ckpt'))
                 print('Model saved in file: %s' % FLAGS.savePath)
+        sess.close()
 
-   
 def parse_parameters(config, architecture_path='architecture.json'):
     #####################################
     # Architecture and model definition #
