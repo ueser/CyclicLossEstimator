@@ -375,7 +375,7 @@ def plot_weights(array,
         plot_funcs=plot_funcs,
         highlight=highlight)
 
-def visualize_dna(weigths, pred_vec, save_dir='../results/', name='dna_prediction', verbose=True):
+def visualize_dna(weights, pred_vec, save_dir='../results/', name='dna_prediction', verbose=True, viz_mode='energy', orig=False):
     save_dir = os.path.join(save_dir, 'dnaseq_viz')
 
     if not tf.gfile.Exists(save_dir):
@@ -390,7 +390,16 @@ def visualize_dna(weigths, pred_vec, save_dir='../results/', name='dna_predictio
         ax = fig.add_subplot(pred_vec.shape[0], 1, ix+1)
         H = abs((.25 * np.log2(.25 + 1e-7) - pred_vec[ix, :, :, 0] * np.log2(pred_vec[ix, :,:,0] + 1e-7)).sum(axis=0))
         H = np.tile(H, 4).reshape(4, pred_vec.shape[2], 1)
-        plot_weights(weigths[ix] * H,
+        if viz_mode=='energy':
+            multiplier = weights[ix]
+
+        elif viz_mode =='weblogo':
+            multiplier = pred_vec[ix,:,:,:]
+            if orig:
+                H = abs((.25 * np.log2(.25 + 1e-7) - weights[ix, :, :, 0] * np.log2(weights[ix, :,:,0] + 1e-7)).sum(axis=0))
+                H = np.tile(H, 4).reshape(4, weights.shape[2], 1)
+
+        plot_weights( multiplier * H,
                      height_padding_factor=0.2,
                      length_padding=1.0,
                      colors=default_colors,
@@ -398,6 +407,7 @@ def visualize_dna(weigths, pred_vec, save_dir='../results/', name='dna_predictio
                      plot_funcs=default_plot_funcs,
                      highlight={},
                      ax=ax)
+
     pl.savefig(os.path.join(save_dir, name + '.png'), format='png')
     pl.close(fig)
 

@@ -1,0 +1,20 @@
+{ "Genome": "hg19",
+  "Tracks": {
+    "chipseq": {
+      "id": "cs",
+      "input_height": 1
+    },
+    "dnaseq": {
+      "id": "ds",
+      "input_height": 4
+    }
+  },
+  "Options": {
+    "Inputs":["chipseq"],
+    "Outputs":["dnaseq"],
+    "Freeze":[],
+    "Reload":[],
+    "Strand":"Single",
+    "DataName":"CTCF_ENCODE_500bp"
+  }
+}
