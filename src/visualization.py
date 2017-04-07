@@ -29,19 +29,15 @@ def main():
     flags.DEFINE_boolean('makePng', True, 'Make png from saved prediction pickles')
     flags.DEFINE_string('vizType', 'dnaseq', 'data type to be vizualized')
     flags.DEFINE_integer('startFrom', 0, 'Start from the iteration number.')
-
     FLAGS = flags.FLAGS
-
     save_dir = os.path.join(FLAGS.resultsDir, FLAGS.runName)
 
     if FLAGS.makePng:
         pckl_files = [fname for fname in os.listdir(save_dir) if 'pred_viz' in fname]
         orig_file = [fname for fname in os.listdir(save_dir) if 'originals.pck' in fname]
-#pdb.set_trace()
         pred_dict = pickle.load(open(os.path.join(save_dir, pckl_files[0]), 'r'))
-
-        if ('dna_before_softmax' in pred_dict.keys()):
-
+        print('pred_dict.keys() = ' + str(pred_dict.keys()))
+        if ('dna_before_softmax_blah' in pred_dict.keys()): # EDIT
             qq=0
             for f_ in tq(pckl_files):
                 pred_dict = pickle.load(open(os.path.join(save_dir, f_),'r'))
@@ -57,6 +53,7 @@ def main():
                           save_dir=save_dir, verbose=False)
 
         elif FLAGS.vizType == 'tssseq':
+            pdb.set_trace()
             qq = 0
             orig_output = pickle.load(open(os.path.join(save_dir, orig_file[0]), 'r'))
             strand = 'Single'
@@ -70,7 +67,7 @@ def main():
 
                 if (qq==1) and (pred_dict.values()[0].shape[1]==2*orig_output.values()[0].shape[2]):
                     strand = 'Double'
-                # pdb.set_trace()
+                pdb.set_trace()
                 plot_prediction(pred_dict, orig_output,
                             name='iteration_{}'.format(iter_no),
                             save_dir=save_dir,
