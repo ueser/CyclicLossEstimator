@@ -1,3 +1,4 @@
+import pdb, traceback, sys #
 from matplotlib import pylab as pl
 import numpy as np
 import h5py
@@ -36,6 +37,7 @@ def main():
     if FLAGS.makePng:
         pckl_files = [fname for fname in os.listdir(save_dir) if 'pred_viz' in fname]
         orig_file = [fname for fname in os.listdir(save_dir) if 'originals.pck' in fname]
+#pdb.set_trace()
         pred_dict = pickle.load(open(os.path.join(save_dir, pckl_files[0]), 'r'))
 
         if ('dna_before_softmax' in pred_dict.keys()):
@@ -229,7 +231,6 @@ def put_kernels_on_grid(kernel, pad = 1):
 
 
 def visualize_filters():
-
     raise NotImplementedError
 
 
@@ -412,4 +413,8 @@ def visualize_dna(weights, pred_vec, save_dir='../results/', name='dna_predictio
     pl.close(fig)
 
 if __name__=='__main__':
-    main()
+    try:
+        main()
+    except:
+        type, value, tb = sys.exc_info()
+        traceback.print_exc()
