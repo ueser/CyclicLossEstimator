@@ -29,7 +29,7 @@ flags.DEFINE_string('configuration', 'configurations.json', 'configuration file 
 flags.DEFINE_string('architecture', 'architecture.json', 'configuration file [json file]')
 flags.DEFINE_string('restorePath', '../results/test', 'Regions to validate [bed or gff files]')
 flags.DEFINE_string('lossEstimator', 'train', 'Loss estimator directory [train or previous runName]')
-flags.DEFINE_string('visualizePrediction', 'offline', 'Prediction profiles to be plotted [online or offline] ')
+flags.DEFINE_string('visualizePrediction', 'online', 'Prediction profiles to be plotted [online or offline] ')
 flags.DEFINE_integer('maxEpoch', 1000, 'Number of epochs to run trainer.')
 flags.DEFINE_integer('batchSize', 100, 'Batch size.')
 flags.DEFINE_integer('strategy', 1, 'Strategy [1: standard loss, 2: adversarial loss, 3: cyclic loss]')
@@ -93,14 +93,13 @@ def main(_):
 
 
         chipseq_pdf = transform_track(chipseq_ph)
-        # pdb.set_trace()
         d2c_cost = kl_loss(chipseq_pdf, chipseq_after_softmax)
 
         d2c_trainables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='dnaseq')
         d2c_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learningRate).minimize(d2c_cost,
                                                                                   global_step=global_step,
                                                                                   var_list=d2c_trainables)
-        
+
         globalMinLoss = 1e6
         d2c_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='dnaseq'))
         sess = tf.Session()
@@ -114,7 +113,6 @@ def main(_):
             cost = 0
             for sub_iter in tq(range(10)):
                 train_batch = batcher.next()
-                # pdb.set_trace()
                 _, sub_cost = sess.run([d2c_optimizer, d2c_cost], feed_dict={d2c.input:train_batch['dnaseq'],
                                                                              chipseq_ph:train_batch[input_track]})
                 cost+=sub_cost
@@ -193,7 +191,6 @@ def main(_):
         print('Training the predictor network')
         globalMinLoss = 1e6
 
-        # pdb.set_trace()
         idx = np.argsort(validation_data[input_track].reshape(validation_data[input_track].shape[0], -1).max(axis=1))
         idx = idx[-1000:-995]
         input_for_pred = validation_data[input_track][idx]
