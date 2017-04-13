@@ -173,3 +173,4 @@ def peak_detection_accuracy(y_true, y_pred, bin_size=50):
 
 def average_peak_distance(y_true, y_pred):
     return tf.reduce_mean(tf.abs(tf.argmax(y_true, dimension=1)-tf.argmax(y_pred, dimension=1)))
+

@@ -383,6 +383,7 @@ def visualize_dna(weights, pred_vec, save_dir='../results/', name='dna_predictio
 
     pl.ioff()
     fig = pl.figure(figsize=(20,20))
+    # weights = np.transpose(weights.reshape(-1, 500, 4), [0, 2, 1])
     if verbose:
         print('\nPlotting predicted DNA sequence')
     for ix in tq(range(pred_vec.shape[0])):
@@ -391,8 +392,15 @@ def visualize_dna(weights, pred_vec, save_dir='../results/', name='dna_predictio
         H = abs((.25 * np.log2(.25 + 1e-7) - pred_vec[ix, :, :, 0] * np.log2(pred_vec[ix, :,:,0] + 1e-7)).sum(axis=0))
         H = np.tile(H, 4).reshape(4, pred_vec.shape[2], 1)
         if viz_mode=='energy':
-            multiplier = weights[ix]
 
+            multiplier = weights[ix,:,:]
+            # H = abs(
+            #     (.25 * np.log2(.25 + 1e-7) - weights[ix, :, :, 0] * np.log2(weights[ix, :, :, 0] + 1e-7)).sum(axis=0))
+            # H = np.tile(H, 4).reshape(4, weights.shape[2], 1)
+
+            H = pred_vec[ix]
+            # multiplier=1.
+            # H=1.
         elif viz_mode =='weblogo':
             multiplier = pred_vec[ix,:,:,:]
             if orig:

@@ -19,6 +19,8 @@ from io_tools import *
 import visualization as viz
 #############################
 
+Bernoulli = tf.contrib.distributions.Bernoulli
+
 
 flags = tf.app.flags
 flags.DEFINE_string('runName', 'experiment', 'Running name.')
@@ -131,20 +133,45 @@ def main(_):
 
     else:
 
+        # dnaseq_ph = tf.placeholder(tf.float32, [None, architecture['Modules']['dnaseq']["input_height"],
+        #                                          architecture['Modules']['dnaseq']["input_width"], 1],
+        #                             name='dnaseq_input')
 
         c2d = ConvolutionalContainer(input_track,
                                      architecture=architecture)
         with tf.variable_scope(input_track):
-            dna_before_softmax = Dense(4*architecture['Modules']['dnaseq']['input_width'], name='FC_before_softmax')(c2d.representation)
-            dna_before_softmax = tf.reshape(dna_before_softmax,
-                                                     [-1, 4, architecture['Modules']['dnaseq']['input_width'], 1])
-            dna_after_softmax = multi_softmax(dna_before_softmax, axis=1, name='multiSoftmax')
+            dna_before_softmax = Dense(4*architecture['Modules']['dnaseq']['input_width'], activation=None, name='FC_before_softmax')(c2d.representation)
+            logits_dna = tf.reshape(dna_before_softmax,[-1,4])
+            # dna_before_softmax = tf.reshape(dna_before_softmax,
+            #                                          [-1, 4, architecture['Modules']['dnaseq']['input_width'], 1])
+            # dna_after_softmax = multi_softmax(dna_before_softmax, axis=1, name='multiSoftmax')
 
+            P_dna = tf.nn.softmax(logits_dna)
+            # temperature
+            tau = tf.constant(5.0, name='temperature')
+            # sample and reshape back (shape=(batch_size,N,K))
+            # set hard=True for ST Gumbel-Softmax
+
+            dna_after_softmax = tf.reshape(gumbel_softmax(logits_dna, tau, hard=False),
+                           [-1, architecture['Modules']['dnaseq']['input_width'], 4, 1])
+            dna_after_softmax = tf.transpose(dna_after_softmax, perm=[0, 2, 1, 3])
+            # generative model p(x|y), i.e. the decoder (shape=(batch_size,200))
+
+            # (shape=(batch_size,784))
+            dna_sample_dist = Bernoulli(logits=logits_dna)
+
+            # dna_before_softmax = Dense(architecture['Modules']['dnaseq']['input_width'], name='FC_before_softmax')(
+            #     c2d.representation)
+            # dna_before_softmax = tf.reshape(dna_before_softmax, [-1, 1, architecture['Modules']['dnaseq']['input_width'], 1])
+            # dna_before_softmax = tf.nn.softmax(dna_before_softmax, name='softmax')
+            # dna_after_softmax = tf.multiply(dna_before_softmax, dnaseq_ph, name='filter_dna')
 
         d2c_est = ConvolutionalContainer('dnaseq',
                                          architecture=architecture, input=dna_after_softmax)
         with tf.variable_scope('dnaseq'):
-            chipseq_before_softmax = Dense(architecture['Modules'][input_track]['input_height']*architecture['Modules'][input_track]['input_width'], name='FC_before_softmax')(d2c_est.representation)
+            chipseq_before_softmax = Dense(architecture['Modules'][input_track]['input_height']*\
+                                           architecture['Modules'][input_track]['input_width'],
+                                           name='FC_before_softmax')(d2c_est.representation)
             chipseq_after_softmax = tf.nn.softmax(chipseq_before_softmax, name='softmax')
 
         chipseq_pdf = transform_track(c2d.input)
@@ -173,10 +200,11 @@ def main(_):
         orig_dna = validation_data['dnaseq'][idx]
         #####
         it = 0
-        feed_d = {c2d.input: input_for_pred}
+        feed_d = {c2d.input: input_for_pred, tau: 1.}
         feed_d.update({K.learning_phase(): 0})
-        weights, pred_vec, chipseq_pred = sess.run([dna_before_softmax, dna_after_softmax, chipseq_after_softmax],
-                                                   feed_d)
+
+        fetch_list = [dna_sample_dist.mean(), dna_after_softmax, chipseq_after_softmax, P_dna]
+        weights, pred_vec, chipseq_pred, prob_dna = sess.run(fetch_list, feed_d)
         predicted_dict = {'dna_before_softmax': weights,
                           'prediction': pred_vec}
         predicted_dict2 = {input_track: chipseq_pred}
@@ -190,28 +218,29 @@ def main(_):
                                 name='iteration_900{}'.format(it),
                                 save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName),
                                 strand=config['Options']['Strand'])
-            viz.visualize_dna(weights, pred_vec,
+            viz.visualize_dna(orig_dna, pred_vec,
                               name='iteration_{}'.format(it),
                               save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName), viz_mode='energy')
-            viz.visualize_dna(weights, orig_dna,
-                          name='orig_iteration_{}'.format(it),
-                          save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName), viz_mode='energy', orig=True)
+            # viz.visualize_dna(weights, orig_dna,
+            #               name='orig_iteration_{}'.format(it),
+            #               save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName), viz_mode='energy', orig=True)
 
 
         ############
-
+        temperature = 5.
         for it in range(1,101):
             cost = 0
             for sub_iter in tq(range(10)):
                 train_batch = batcher.next()
-                _, sub_cost = sess.run([c2d_optimizer, c2d_cost], feed_dict={c2d.input:train_batch[input_track]})
+                _, sub_cost = sess.run([c2d_optimizer, c2d_cost], feed_dict={c2d.input:train_batch[input_track],  tau: temperature})
                 cost += sub_cost
             cost /= 10.
-            val_cost = sess.run(c2d_cost, feed_dict={c2d.input: validation_data[input_track]})
+            val_cost = sess.run(c2d_cost, feed_dict={c2d.input: validation_data[input_track],  tau: temperature})
 
             print('Iteration no: {}'.format(it))
             print('Train cost: {}'.format(cost))
             print('Validation cost: {}'.format(val_cost))
+            print('Temperature: {}'.format(temperature))
             if val_cost < globalMinLoss:
                 globalMinLoss = val_cost.copy()
                 save_path = c2d_saver.save(sess, os.path.join(FLAGS.savePath, 'c2d_model.ckpt'))
@@ -219,12 +248,14 @@ def main(_):
 
                 # for every 50 iteration,
             if it % 5 == 0:
+                temperature/=2.
 
-                feed_d = {c2d.input:input_for_pred}
+                feed_d = {c2d.input:input_for_pred,  tau: 0.01}
                 feed_d.update({K.learning_phase(): 0})
-                weights, pred_vec, chipseq_pred = sess.run([dna_before_softmax, dna_after_softmax, chipseq_after_softmax], feed_d)
-                predicted_dict = {'dna_before_softmax': weights,
-                                  'prediction': pred_vec}
+                weights, pred_vec, chipseq_pred, prob_dna = sess.run(fetch_list, feed_d)
+                predicted_dict = {'sample_mean': weights,
+                                  'prediction': pred_vec,
+                                  'prob_dna': prob_dna}
                 predicted_dict2 = {input_track: chipseq_pred}
 
                 pickle.dump(predicted_dict,
@@ -237,13 +268,13 @@ def main(_):
                                             name='iteration_900{}'.format(it),
                                             save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName),
                                             strand=config['Options']['Strand'])
-                    viz.visualize_dna(weights, pred_vec,
+                    viz.visualize_dna(orig_dna, pred_vec,
                                       name='iteration_{}'.format(it),
                                           save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName), viz_mode='energy')
-
-                    viz.visualize_dna(weights, orig_dna,
-                                      name='orig_iteration_{}'.format(it),
-                                      save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName), viz_mode='energy', orig=True)
+                    #
+                    # viz.visualize_dna(weights, orig_dna,
+                    #                   name='orig_iteration_{}'.format(it),
+                    #                   save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName), viz_mode='energy', orig=True)
                             #
         sess.close()
 
@@ -283,6 +314,38 @@ def parse_parameters(config, architecture_path='architecture.json'):
                     else:
                         architecture['Modules'][key][key_key] = sub_val
     return architecture
+
+
+
+def sample_gumbel(shape, eps=1e-20):
+    """Sample from Gumbel(0, 1)"""
+    U = tf.random_uniform(shape,minval=0,maxval=1)
+    return -tf.log(-tf.log(U + eps) + eps)
+
+def gumbel_softmax_sample(logits, temperature):
+    """ Draw a sample from the Gumbel-Softmax distribution"""
+    y = logits + sample_gumbel(tf.shape(logits))
+    return tf.nn.softmax( y / temperature)
+
+def gumbel_softmax(logits, temperature, hard=False):
+    """Sample from the Gumbel-Softmax distribution and optionally discretize.
+    Args:
+    logits: [batch_size, n_class] unnormalized log-probs
+    temperature: non-negative scalar
+    hard: if True, take argmax, but differentiate w.r.t. soft sample y
+    Returns:
+    [batch_size, n_class] sample from the Gumbel-Softmax distribution.
+    If hard=True, then the returned sample will be one-hot, otherwise it will
+    be a probabilitiy distribution that sums to 1 across classes
+    """
+    y = gumbel_softmax_sample(logits, temperature)
+    if hard:
+        k = tf.shape(logits)[-1]
+        #y_hard = tf.cast(tf.one_hot(tf.argmax(y,1),k), y.dtype)
+        y_hard = tf.cast(tf.equal(y,tf.reduce_max(y,1,keep_dims=True)),y.dtype)
+        y = tf.stop_gradient(y_hard - y) + y
+    return y
+
 
 if __name__ == '__main__':
     try:
