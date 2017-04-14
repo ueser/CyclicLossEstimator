@@ -52,192 +52,314 @@ def main(_):
     if not tf.gfile.Exists(FLAGS.savePath):
         tf.gfile.MakeDirs(FLAGS.savePath)
 
-    architecture = parse_parameters(config, FLAGS.architecture)
+    architecture = parse_parameters(config,
+                                    FLAGS.architecture
+                                   )
     # # save resulting modified architecture and configuration
     # json.dump(model.architecture, open(FLAGS.savePath + "/architecture.json", 'w'))
     # json.dump(model.config, open(FLAGS.savePath + "/configuration.json", 'w'))
 
     # input training and validation data
-    train_h5_handle = h5py.File(os.path.join(FLAGS.dataDir, config['Options']['DataName'], 'train.h5'), 'r')
-    validation_h5_handle = h5py.File(os.path.join(FLAGS.dataDir, config['Options']['DataName'], 'validation.h5'),
+    train_h5_handle = h5py.File(os.path.join(FLAGS.dataDir,
+                                             config['Options']['DataName'],
+                                             'train.h5'),
+                                'r')
+    validation_h5_handle = h5py.File(os.path.join(FLAGS.dataDir,
+                                                  config['Options']['DataName'],
+                                                  'validation.h5'),
                                      'r')
 
     # create iterator over training data
-    data = MultiModalData(train_h5_handle, batch_size=FLAGS.batchSize)
+    data = MultiModalData(train_h5_handle,
+                          batch_size = FLAGS.batchSize
+                         )
     batcher = data.batcher()
     print('Storing validation data to the memory')
     try:
         all_keys = list(set(architecture['Inputs'] + architecture['Outputs']))
         validation_data = {key: validation_h5_handle[key][:] for key in all_keys}
     except KeyError:
-        print('Make sure that the configuration file contains the correct track names (keys), '
-              'which should match the hdf5 keys')
+        print('Make sure that the configuration file contains the correct track '
+              'names (keys) which should match the hdf5 keys')
 
-    global_step = tf.Variable(0, name='globalStep', trainable=False)
-
+    global_step = tf.Variable(0,
+                              name = 'globalStep',
+                              trainable = False
+                             )
     input_track = config['Options']['Inputs'][0]
+
     # define neural network
-    if FLAGS.lossEstimator=='train':
-        chipseq_ph = tf.placeholder(tf.float32, [None, architecture['Modules'][input_track]["input_height"],
-                                                       architecture['Modules'][input_track]["input_width"], 1],
-                                          name='chipseq_input')
+    if FLAGS.lossEstimator == 'train':
+        chipseq_ph = tf.placeholder(tf.float32,
+                                    [None,
+                                     architecture['Modules'][input_track]["input_height"],
+                                     architecture['Modules'][input_track]["input_width"],
+                                     1
+                                    ],
+                                    name = 'chipseq_input'
+                                   )
         d2c = ConvolutionalContainer('dnaseq',
-                           architecture=architecture)
-
+                                     architecture = architecture
+                                    )
         with tf.variable_scope('dnaseq'):
-            chipseq_before_softmax = Dense(architecture['Modules'][input_track]['input_height']*architecture['Modules'][input_track]['input_width'],
-                                           name='FC_before_softmax')(d2c.representation)
-            chipseq_after_softmax = tf.nn.softmax(chipseq_before_softmax, name='softmax')
-
-
+            chipseq_before_softmax = Dense(architecture['Modules'][input_track]['input_height']
+                                           * architecture['Modules'][input_track]['input_width'],
+                                           name = 'FC_before_softmax'
+                                          )(d2c.representation)
+            chipseq_after_softmax = tf.nn.softmax(chipseq_before_softmax,
+                                                  name = 'softmax'
+                                                 )
         chipseq_pdf = transform_track(chipseq_ph)
-        d2c_cost = kl_loss(chipseq_pdf, chipseq_after_softmax)
-
-        d2c_trainables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='dnaseq')
-        d2c_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learningRate).minimize(d2c_cost,
-                                                                                  global_step=global_step,
-                                                                                  var_list=d2c_trainables)
+        d2c_cost = kl_loss(chipseq_pdf,
+                           chipseq_after_softmax
+                          )
+        d2c_trainables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                           scope = 'dnaseq'
+                                          )
+        d2c_optimizer = tf.train.AdamOptimizer(learning_rate = FLAGS.learningRate
+                                              ).minimize(d2c_cost,
+                                                         global_step = global_step,
+                                                         var_list = d2c_trainables
+                                                        )
 
         globalMinLoss = 1e6
-        d2c_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='dnaseq'))
+        d2c_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                                     scope = 'dnaseq'
+                                                    )
+                                  )
         sess = tf.Session()
-        init = tf.global_variables_initializer()  # std out recommended this instead
+        init = tf.global_variables_initializer()
         sess.run(init)
         print('Session initialized.')
         print('Training the estimator network')
 
-##
-        for it in range(100):
+        for it in range(1000): # EDIT: why 100? could implement keras early stopping
             cost = 0
             for sub_iter in tq(range(10)):
                 train_batch = batcher.next()
-                _, sub_cost = sess.run([d2c_optimizer, d2c_cost], feed_dict={d2c.input:train_batch['dnaseq'],
-                                                                             chipseq_ph:train_batch[input_track]})
-                cost+=sub_cost
-            cost/=10.
-
-            val_cost = sess.run(d2c_cost, feed_dict={d2c.input: validation_data['dnaseq'],
-                                                                         chipseq_ph:validation_data[input_track]})
+                _, sub_cost = sess.run([d2c_optimizer,
+                                        d2c_cost
+                                       ],
+                                       feed_dict = {d2c.input:train_batch['dnaseq'],
+                                                    chipseq_ph:train_batch[input_track]
+                                                   }
+                                      )
+                cost += sub_cost
+            cost /= 10.
+            val_cost = sess.run(d2c_cost,
+                                feed_dict = {d2c.input: validation_data['dnaseq'],
+                                             chipseq_ph:validation_data[input_track]
+                                            }
+                               )
             print('Iteration no: {}'.format(it))
             print('Train cost: {}'.format(cost))
             print('Validation cost: {}'.format(val_cost))
             if val_cost < globalMinLoss:
                 globalMinLoss = val_cost.copy()
-                save_path = d2c_saver.save(sess, os.path.join(FLAGS.savePath, 'd2c_model.ckpt'))
+                save_path = d2c_saver.save(sess,
+                                           os.path.join(FLAGS.savePath,
+                                                        'd2c_model.ckpt'
+                                                       )
+                                          )
                 print('Model saved in file: %s' % FLAGS.savePath)
         sess.close()
 
     else:
-        c2d = ConvolutionalContainer(input_track, architecture=architecture)
+        c2d = ConvolutionalContainer(input_track,
+                                     architecture = architecture
+                                    )
         with tf.variable_scope(input_track):
-            dna_before_softmax = Dense(4*architecture['Modules']['dnaseq']['input_width'], name='FC_before_softmax')(c2d.representation)
+            dna_before_softmax = Dense(4 * architecture['Modules']['dnaseq']['input_width'],
+                                       name = 'FC_before_softmax'
+                                      )(c2d.representation)
             dna_before_softmax = tf.reshape(dna_before_softmax,
-                                                     [-1, 4, architecture['Modules']['dnaseq']['input_width'], 1])
-            dna_after_softmax = multi_softmax(dna_before_softmax, axis=1, name='multiSoftmax')
-        d2c_est = ConvolutionalContainer('dnaseq', architecture=architecture, input=dna_after_softmax)
+                                            [-1,
+                                             4,
+                                             architecture['Modules']['dnaseq']['input_width'],
+                                             1
+                                            ]
+                                           )
+            dna_after_softmax = multi_softmax(dna_before_softmax,
+                                              axis = 1,
+                                              name = 'multiSoftmax'
+                                             )
+        d2c_est = ConvolutionalContainer('dnaseq',
+                                         architecture = architecture,
+                                         input = dna_after_softmax
+                                        )
         with tf.variable_scope('dnaseq'):
-            chipseq_before_softmax = Dense(architecture['Modules'][input_track]['input_height']*architecture['Modules'][input_track]['input_width'], name='FC_before_softmax')(d2c_est.representation)
-            chipseq_after_softmax = tf.nn.softmax(chipseq_before_softmax, name='softmax')
-
+            chipseq_before_softmax = Dense(architecture['Modules'][input_track]['input_height']
+                                           * architecture['Modules'][input_track]['input_width'],
+                                           name='FC_before_softmax'
+                                          )(d2c_est.representation)
+            chipseq_after_softmax = tf.nn.softmax(chipseq_before_softmax,
+                                                  name = 'softmax'
+                                                 )
         chipseq_pdf = transform_track(c2d.input)
-        c2d_cost = kl_loss(chipseq_pdf, chipseq_after_softmax)
-
-        c2d_trainables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=input_track)
-        c2d_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learningRate).minimize(c2d_cost,
-                                                                                          global_step=global_step,
-                                                                                          var_list=c2d_trainables)
+        c2d_cost = kl_loss(chipseq_pdf,
+                           chipseq_after_softmax
+                          )
+        c2d_trainables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                           scope = input_track
+                                          )
+        c2d_optimizer = tf.train.AdamOptimizer(learning_rate = FLAGS.learningRate
+                                              ).minimize(c2d_cost,
+                                                         global_step = global_step,
+                                                         var_list = c2d_trainables
+                                                        )
         sess = tf.Session()
-        init = tf.global_variables_initializer()  # std out recommended this instead
+        init = tf.global_variables_initializer()
         sess.run(init)
 
-        d2c_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='dnaseq'))
-        d2c_saver.restore(sess, os.path.join(FLAGS.resultsDir, FLAGS.lossEstimator, 'd2c_model.ckpt'))
-
-        c2d_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=input_track))
+        d2c_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                                     scope = 'dnaseq'
+                                                    )
+                                  )
+        d2c_saver.restore(sess,
+                          os.path.join(FLAGS.resultsDir,
+                                       FLAGS.lossEstimator,
+                                       'd2c_model.ckpt'
+                                      )
+                         )
+        c2d_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                                     scope = input_track
+                                                    )
+                                  )
         print('Session initialized.')
         print('Training the predictor network')
         globalMinLoss = 1e6
 
-        idx = np.argsort(validation_data[input_track].reshape(validation_data[input_track].shape[0], -1).max(axis=1))
+        idx = np.argsort(validation_data[input_track].reshape(validation_data[input_track].shape[0],
+                                                              -1
+                                                             ).max(axis = 1)
+                        )
         idx = idx[-1000:-995]
         input_for_pred = validation_data[input_track][idx]
-        orig_dna = validation_data['dnaseq'][idx]
-        #####
+        orig_dna = validation_data['dnaseq'][idx] # best picks for later overlapping display
+
         it = 0
         feed_d = {c2d.input: input_for_pred}
         feed_d.update({K.learning_phase(): 0})
-        weights, pred_vec, chipseq_pred = sess.run([dna_before_softmax, dna_after_softmax, chipseq_after_softmax],
-                                                   feed_d)
+        weights, pred_vec, chipseq_pred = sess.run([dna_before_softmax,
+                                                    dna_after_softmax,
+                                                    chipseq_after_softmax
+                                                   ],
+                                                   feed_d
+                                                  )
         predicted_dict = {'dna_before_softmax': weights,
-                          'prediction': pred_vec}
+                          'prediction': pred_vec
+                         }
         predicted_dict2 = {input_track: chipseq_pred}
-
         pickle.dump(predicted_dict,
-                    open(os.path.join(FLAGS.resultsDir, FLAGS.runName, 'pred_viz_{}.pck'.format(it)),
-                         "wb"))
-
+                    open(os.path.join(FLAGS.resultsDir,
+                                      FLAGS.runName,
+                                      'pred_viz_{}.pck'.format(it)
+                                     ),
+                         "wb"
+                        )
+                   )
         if FLAGS.visualizePrediction == 'online':
-            viz.plot_prediction(predicted_dict2, {input_track: input_for_pred},
-                                name='iteration_900{}'.format(it),
-                                save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName),
-                                strand=config['Options']['Strand'])
-            viz.visualize_dna(weights, pred_vec,
-                              name='iteration_{}'.format(it),
-                              save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName), viz_mode='energy')
-            viz.visualize_dna(weights, orig_dna,
-                          name='orig_iteration_{}'.format(it),
-                          save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName), viz_mode='energy', orig=True)
-
-
+            viz.plot_prediction(predicted_dict2,
+                                {input_track: input_for_pred},
+                                name = 'iteration_900{}'.format(it),
+                                save_dir = os.path.join(FLAGS.resultsDir,
+                                                        FLAGS.runName
+                                                       ),
+                                strand = config['Options']['Strand']
+                               )
+            viz.visualize_dna(weights,
+                              pred_vec,
+                              name = 'iteration_{}'.format(it),
+                              save_dir = os.path.join(FLAGS.resultsDir,
+                                                      FLAGS.runName
+                                                     ),
+                              viz_mode = 'energy'
+                             )
+            viz.visualize_dna(weights,
+                              orig_dna,
+                              name = 'orig_iteration_{}'.format(it),
+                              save_dir = os.path.join(FLAGS.resultsDir,
+                                                      FLAGS.runName
+                                                     ),
+                              viz_mode = 'energy',
+                              orig = True
+                             )
         ############
 
-        for it in range(1,101):
+        for it in range(1, 1001):
             cost = 0
             for sub_iter in tq(range(10)):
                 train_batch = batcher.next()
-                _, sub_cost = sess.run([c2d_optimizer, c2d_cost], feed_dict={c2d.input:train_batch[input_track]})
+                _, sub_cost = sess.run([c2d_optimizer,
+                                        c2d_cost
+                                       ],
+                                       feed_dict = {c2d.input:train_batch[input_track]}
+                                      )
                 cost += sub_cost
             cost /= 10.
-            val_cost = sess.run(c2d_cost, feed_dict={c2d.input: validation_data[input_track]})
+            val_cost = sess.run(c2d_cost,
+                                feed_dict = {c2d.input:validation_data[input_track]}
+                               )
 
             print('Iteration no: {}'.format(it))
             print('Train cost: {}'.format(cost))
             print('Validation cost: {}'.format(val_cost))
             if val_cost < globalMinLoss:
                 globalMinLoss = val_cost.copy()
-                save_path = c2d_saver.save(sess, os.path.join(FLAGS.savePath, 'c2d_model.ckpt'))
+                save_path = c2d_saver.save(sess,
+                                           os.path.join(FLAGS.savePath,
+                                                        'c2d_model.ckpt'
+                                                       )
+                                          )
                 print('Model saved in file: %s' % FLAGS.savePath)
-
-                # for every 50 iteration,
             if it % 5 == 0:
-
                 feed_d = {c2d.input:input_for_pred}
                 feed_d.update({K.learning_phase(): 0})
-                weights, pred_vec, chipseq_pred = sess.run([dna_before_softmax, dna_after_softmax, chipseq_after_softmax], feed_d)
+                weights, pred_vec, chipseq_pred = sess.run([dna_before_softmax,
+                                                            dna_after_softmax,
+                                                            chipseq_after_softmax
+                                                           ],
+                                                           feed_d
+                                                          )
                 predicted_dict = {'dna_before_softmax': weights,
-                                  'prediction': pred_vec}
+                                  'prediction': pred_vec
+                                 }
                 predicted_dict2 = {input_track: chipseq_pred}
-
                 pickle.dump(predicted_dict,
-                            open(os.path.join(FLAGS.resultsDir, FLAGS.runName, 'pred_viz_{}.pck'.format(it)),
-                                 "wb"))
-
+                            open(os.path.join(FLAGS.resultsDir,
+                                              FLAGS.runName,
+                                              'pred_viz_{}.pck'.format(it)
+                                             ),
+                                 "wb"
+                                )
+                           )
                 if FLAGS.visualizePrediction == 'online':
-
-                    viz.plot_prediction(predicted_dict2, {input_track:input_for_pred},
-                                            name='iteration_900{}'.format(it),
-                                            save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName),
-                                            strand=config['Options']['Strand'])
-                    viz.visualize_dna(weights, pred_vec,
-                                      name='iteration_{}'.format(it),
-                                          save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName), viz_mode='energy')
-
-                    viz.visualize_dna(weights, orig_dna,
-                                      name='orig_iteration_{}'.format(it),
-                                      save_dir=os.path.join(FLAGS.resultsDir, FLAGS.runName), viz_mode='energy', orig=True)
-                            #
+                    viz.plot_prediction(predicted_dict2,
+                                        {input_track:input_for_pred},
+                                        name = 'iteration_900{}'.format(it),
+                                        save_dir = os.path.join(FLAGS.resultsDir,
+                                                                FLAGS.runName
+                                                               ),
+                                        strand = config['Options']['Strand']
+                                       )
+                    viz.visualize_dna(weights,
+                                      pred_vec,
+                                      name = 'iteration_{}'.format(it),
+                                      save_dir = os.path.join(FLAGS.resultsDir,
+                                                              FLAGS.runName
+                                                             ),
+                                      viz_mode = 'energy'
+                                     )
+                    viz.visualize_dna(weights,
+                                      orig_dna,
+                                      name = 'orig_iteration_{}'.format(it),
+                                      save_dir = os.path.join(FLAGS.resultsDir,
+                                                              FLAGS.runName
+                                                             ),
+                                      viz_mode = 'energy',
+                                      orig = True
+                                     )
         sess.close()
-
 
 
 

@@ -30,7 +30,7 @@
     }
   },
   "Options": {
-    "Inputs":["tssseq"],
+    "Inputs":["netseq"],
     "Outputs":["dnaseq"],
     "Freeze":[],
     "Reload":[],

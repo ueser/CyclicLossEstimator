@@ -41,7 +41,7 @@ def KL_divergence(P_, Q_):
                                                  tf.log(K.clip(Q_, K.epsilon(), 1)))), 1)
 
 
-def transform_track(track_data_placeholder, option='pdf'):
+def transform_track(track_data_placeholder, option = 'pdf'):
     """Converts input placeholder tensor to probability distribution function
         :param track_data_placeholder:
         :param option: pdf: converts every entry to a pdf
@@ -51,9 +51,18 @@ def transform_track(track_data_placeholder, option='pdf'):
     """
     if option == 'pdf':
         output_tensor = tf.reshape(track_data_placeholder,
-                                   [-1, (track_data_placeholder.get_shape()[1] * track_data_placeholder.get_shape()[
-                                       2]).value]) + K.epsilon()
-        output_tensor = tf.divide(output_tensor, tf.reduce_sum(output_tensor, 1, keep_dims=True))
+                                   [-1,
+                                    (track_data_placeholder.get_shape()[1]
+                                     * track_data_placeholder.get_shape()[2]
+                                    ).value
+                                   ]
+                                  ) + K.epsilon()
+        output_tensor = tf.divide(output_tensor,
+                                  tf.reduce_sum(output_tensor,
+                                                1,
+                                                keep_dims = True
+                                               )
+                                 )
     # NOT completed yet
     elif option == 'standardize':
         raise NotImplementedError
@@ -113,53 +122,70 @@ class BaseTrackContainer(object):
 
 class ConvolutionalContainer(BaseTrackContainer):
 
-    def __init__(self, track_name, architecture, batch_norm=False, input=None):
+    def __init__(self, track_name, architecture, batch_norm = False, input = None):
         BaseTrackContainer.__init__(self, track_name)
         self.track_name = track_name
         self.architecture = architecture
-        self.batch_norm=batch_norm
-
+        self.batch_norm = batch_norm
         if input is None:
-            self.input = tf.placeholder(tf.float32, [None, self.architecture['Modules'][self.track_name]["input_height"],
-                                                       self.architecture['Modules'][self.track_name]["input_width"], 1],
-                                          name=self.track_name+'_input')
+            self.input = tf.placeholder(tf.float32,
+                                        [None,
+                                         self.architecture['Modules'][self.track_name]["input_height"],
+                                         self.architecture['Modules'][self.track_name]["input_width"],
+                                         1
+                                        ],
+                                        name = self.track_name + '_input'
+                                       )
         else:
             self.input = input
-
         self._build()
 
     def _build(self):
         # scope reusing is for cost estimation  for future implementations
-        with tf.variable_scope(self.track_name, reuse=True):
+        with tf.variable_scope(self.track_name, reuse = True):
             net = Conv2D(self.architecture['Modules'][self.track_name]['Layer1']['number_of_filters'],
                          [self.architecture['Modules'][self.track_name]['Layer1']['filter_height'],
-                         self.architecture['Modules'][self.track_name]['Layer1']['filter_width']],
-                         activation=self.architecture['Modules'][self.track_name]['Layer1']['activation'],
-                         kernel_regularizer='l2',
-                         padding='valid',
-                         name='conv_1')(self.input)
-            net = AveragePooling2D((1, self.architecture['Modules'][self.track_name]['Layer1']['pool_size']),
-                                    strides=(1, self.architecture['Modules'][self.track_name]['Layer1']['pool_stride']))(net)
+                          self.architecture['Modules'][self.track_name]['Layer1']['filter_width']
+                         ],
+                         activation = self.architecture['Modules'][self.track_name]['Layer1']['activation'],
+                         kernel_regularizer = 'l2',
+                         padding = 'valid',
+                         name = 'conv_1'
+                        )(self.input)
+            net = AveragePooling2D((1,
+                                    self.architecture['Modules'][self.track_name]['Layer1']['pool_size']
+                                   ),
+                                   strides = (1,
+                                              self.architecture['Modules'][self.track_name]['Layer1']['pool_stride']
+                                             )
+                                   )(net)
+            # EDIT: supposedly deprecated... cause batch normalization bad - what about other regularization techniques?
             if self.batch_norm:
                 net = BatchNormalization()(net)
             net = Conv2D(self.architecture['Modules'][self.track_name]['Layer2']['number_of_filters'],
-                                  [self.architecture['Modules'][self.track_name]['Layer2']['filter_height'],
-                                   self.architecture['Modules'][self.track_name]['Layer2']['filter_width']],
-                                  activation=self.architecture['Modules'][self.track_name]['Layer2']['activation'],
-                                  kernel_regularizer='l2',
-                                  padding='valid',
-                                  name='conv_2')(net)
-
-            net = AveragePooling2D([1, self.architecture['Modules'][self.track_name]['Layer2']['pool_size']],
-                                    strides=[1, self.architecture['Modules'][self.track_name]['Layer2']['pool_stride']],
-                                    padding='valid',
-                                    name='AvgPool_2')(net)
+                         [self.architecture['Modules'][self.track_name]['Layer2']['filter_height'],
+                          self.architecture['Modules'][self.track_name]['Layer2']['filter_width']
+                         ],
+                         activation = self.architecture['Modules'][self.track_name]['Layer2']['activation'],
+                         kernel_regularizer = 'l2',
+                         padding = 'valid',
+                         name = 'conv_2'
+                        )(net)
+            net = AveragePooling2D([1,
+                                    self.architecture['Modules'][self.track_name]['Layer2']['pool_size']
+                                   ],
+                                   strides = [1,
+                                              self.architecture['Modules'][self.track_name]['Layer2']['pool_stride']
+                                             ],
+                                   padding = 'valid',
+                                   name = 'AvgPool_2'
+                                  )(net)
             if self.batch_norm:
                 net = BatchNormalization()(net)
             net = Flatten()(net)
             self.representation = Dense(self.architecture['Modules'][self.track_name]['representation_width'],
-                        name='representation')(net)
-
+                                        name = 'representation'
+                                       )(net)
 
 def kl_loss(y_true, y_pred):
     return tf.reduce_mean(kullback_leibler_divergence(y_true, y_pred))
