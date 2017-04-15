@@ -23,3 +23,6 @@ The top one is the TSS-seq prediction as a result of loss-estimator and the bott
 
 ![alt text](https://cloud.githubusercontent.com/assets/1741502/24806673/9a72a6ba-1b83-11e7-8142-d4ab8ea09dcb.gif)
 
+The following GIF shows the prediction of important regulatory DNA sequence from CTCF ChIP-seq data along with the reconstructed ChIP-seq signal. Note that the reconstruction is paid off by the regularizing DNA sequence to be interpretable. 
+
+![alt_text](https://cloud.githubusercontent.com/assets/1741502/25063871/babd5188-21bc-11e7-86de-b0c218f90c71.gif)
