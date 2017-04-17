@@ -417,6 +417,7 @@ def visualize_dna(weights, pred_vec, save_dir='../results/', name='dna_predictio
                      highlight={},
                      ax=ax)
 
+    pl.title(name)
     pl.savefig(os.path.join(save_dir, name + '.png'), format='png')
     pl.close(fig)
 

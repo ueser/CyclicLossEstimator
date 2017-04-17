@@ -16,7 +16,7 @@ import cPickle as pickle
 ### FIDDLE specific tools ###
 from models import *
 from io_tools import *
-import visualization as viz
+import visualization_gumbel as viz
 #############################
 
 Bernoulli = tf.contrib.distributions.Bernoulli
@@ -54,18 +54,31 @@ def main(_):
     if not tf.gfile.Exists(FLAGS.savePath):
         tf.gfile.MakeDirs(FLAGS.savePath)
 
-    architecture = parse_parameters(config, FLAGS.architecture)
-    # # save resulting modified architecture and configuration
+    architecture = parse_parameters(config,
+                                    FLAGS.architecture
+                                   )
+    # save resulting modified architecture and configuration
     # json.dump(model.architecture, open(FLAGS.savePath + "/architecture.json", 'w'))
     # json.dump(model.config, open(FLAGS.savePath + "/configuration.json", 'w'))
 
     # input training and validation data
-    train_h5_handle = h5py.File(os.path.join(FLAGS.dataDir, config['Options']['DataName'], 'train.h5'), 'r')
-    validation_h5_handle = h5py.File(os.path.join(FLAGS.dataDir, config['Options']['DataName'], 'validation.h5'),
-                                     'r')
+    train_h5_handle = h5py.File(os.path.join(FLAGS.dataDir,
+                                             config['Options']['DataName'],
+                                             'train.h5'
+                                            ),
+                                'r'
+                               )
+    validation_h5_handle = h5py.File(os.path.join(FLAGS.dataDir,
+                                                  config['Options']['DataName'],
+                                                  'validation.h5'
+                                                 ),
+                                     'r'
+                                    )
 
     # create iterator over training data
-    data = MultiModalData(train_h5_handle, batch_size=FLAGS.batchSize)
+    data = MultiModalData(train_h5_handle,
+                          batch_size=FLAGS.batchSize
+                         )
     batcher = data.batcher()
     print('Storing validation data to the memory')
     try:
@@ -74,98 +87,125 @@ def main(_):
     except KeyError:
         print('Make sure that the configuration file contains the correct track names (keys), '
               'which should match the hdf5 keys')
-
-    global_step = tf.Variable(0, name='globalStep', trainable=False)
-
+    global_step = tf.Variable(0,
+                              name='globalStep',
+                              trainable=False
+                             )
     input_track = config['Options']['Inputs'][0]
+
     # define neural network
     if FLAGS.lossEstimator=='train':
-        chipseq_ph = tf.placeholder(tf.float32, [None, architecture['Modules'][input_track]["input_height"],
-                                                       architecture['Modules'][input_track]["input_width"], 1],
-                                          name='chipseq_input')
+        chipseq_ph = tf.placeholder(tf.float32,
+                                    [None,
+                                     architecture['Modules'][input_track]["input_height"],
+                                     architecture['Modules'][input_track]["input_width"],
+                                     1
+                                    ],
+                                    name='chipseq_input'
+                                   )
         d2c = ConvolutionalContainer('dnaseq',
-                           architecture=architecture)
+                                     architecture=architecture
+                                    )
 
         with tf.variable_scope('dnaseq'):
-            chipseq_before_softmax = Dense(architecture['Modules'][input_track]['input_height']*architecture['Modules'][input_track]['input_width'],
-                                           name='FC_before_softmax')(d2c.representation)
-            chipseq_after_softmax = tf.nn.softmax(chipseq_before_softmax, name='softmax')
-
-
+            chipseq_before_softmax = Dense(architecture['Modules'][input_track]['input_height']
+                                           * architecture['Modules'][input_track]['input_width'],
+                                           name='FC_before_softmax'
+                                          )(d2c.representation)
+            chipseq_after_softmax = tf.nn.softmax(chipseq_before_softmax,
+                                                  name='softmax'
+                                                 )
         chipseq_pdf = transform_track(chipseq_ph)
-        d2c_cost = kl_loss(chipseq_pdf, chipseq_after_softmax)
-
-        d2c_trainables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='dnaseq')
-        d2c_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learningRate).minimize(d2c_cost,
-                                                                                  global_step=global_step,
-                                                                                  var_list=d2c_trainables)
-
+        d2c_cost = kl_loss(chipseq_pdf,
+                           chipseq_after_softmax
+                          )
+        d2c_trainables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                           scope='dnaseq'
+                                          )
+        d2c_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learningRate
+                                              ).minimize(d2c_cost,
+                                                         global_step=global_step,
+                                                         var_list=d2c_trainables
+                                                        )
         globalMinLoss = 1e6
-        d2c_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='dnaseq'))
+        d2c_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                                     scope='dnaseq'
+                                                    )
+                                  )
         sess = tf.Session()
-        init = tf.global_variables_initializer()  # std out recommended this instead
+        init = tf.global_variables_initializer()
         sess.run(init)
         print('Session initialized.')
         print('Training the estimator network')
 
-##
         for it in range(100):
             cost = 0
             for sub_iter in tq(range(10)):
                 train_batch = batcher.next()
-                _, sub_cost = sess.run([d2c_optimizer, d2c_cost], feed_dict={d2c.input:train_batch['dnaseq'],
-                                                                             chipseq_ph:train_batch[input_track]})
+                _, sub_cost = sess.run([d2c_optimizer,
+                                        d2c_cost
+                                       ],
+                                       feed_dict={d2c.input:train_batch['dnaseq'],
+                                                  chipseq_ph:train_batch[input_track]
+                                                 }
+                                      )
                 cost+=sub_cost
             cost/=10.
-
-            val_cost = sess.run(d2c_cost, feed_dict={d2c.input: validation_data['dnaseq'],
-                                                                         chipseq_ph:validation_data[input_track]})
+            val_cost = sess.run(d2c_cost,
+                                feed_dict={d2c.input: validation_data['dnaseq'],
+                                chipseq_ph:validation_data[input_track]}
+                               )
             print('Iteration no: {}'.format(it))
             print('Train cost: {}'.format(cost))
             print('Validation cost: {}'.format(val_cost))
             if val_cost < globalMinLoss:
                 globalMinLoss = val_cost.copy()
-                save_path = d2c_saver.save(sess, os.path.join(FLAGS.savePath, 'd2c_model.ckpt'))
+                save_path = d2c_saver.save(sess,
+                                           os.path.join(FLAGS.savePath,
+                                                        'd2c_model.ckpt'
+                                                       )
+                                          )
                 print('Model saved in file: %s' % FLAGS.savePath)
         sess.close()
 
-    else:
-
-        # dnaseq_ph = tf.placeholder(tf.float32, [None, architecture['Modules']['dnaseq']["input_height"],
-        #                                          architecture['Modules']['dnaseq']["input_width"], 1],
-        #                             name='dnaseq_input')
-
+    else: # FLAGS.lossEstimator=='myLossEstimator'
         c2d = ConvolutionalContainer(input_track,
-                                     architecture=architecture)
+                                     architecture=architecture
+                                    )
         with tf.variable_scope(input_track):
-            dna_before_softmax = Dense(4*architecture['Modules']['dnaseq']['input_width'], activation=None, name='FC_before_softmax')(c2d.representation)
-            logits_dna = tf.reshape(dna_before_softmax,[-1,4])
-            # dna_before_softmax = tf.reshape(dna_before_softmax,
-            #                                          [-1, 4, architecture['Modules']['dnaseq']['input_width'], 1])
-            # dna_after_softmax = multi_softmax(dna_before_softmax, axis=1, name='multiSoftmax')
-
+            dna_before_softmax = Dense(4*architecture['Modules']['dnaseq']['input_width'],
+                                       activation=None,
+                                       name='FC_before_softmax'
+                                      )(c2d.representation)
+            logits_dna = tf.reshape(dna_before_softmax,
+                                    [-1,4]
+                                   )
             P_dna = tf.nn.softmax(logits_dna)
-            # temperature
-            tau = tf.constant(5.0, name='temperature')
+            tau = tf.constant(5.0, name='temperature') # temperature
             # sample and reshape back (shape=(batch_size,N,K))
             # set hard=True for ST Gumbel-Softmax
-
-            dna_after_softmax = tf.reshape(gumbel_softmax(logits_dna, tau, hard=False),
-                           [-1, architecture['Modules']['dnaseq']['input_width'], 4, 1])
-            dna_after_softmax = tf.transpose(dna_after_softmax, perm=[0, 2, 1, 3])
+            dna_after_softmax = tf.reshape(gumbel_softmax(logits_dna,
+                                                          tau,
+                                                          hard=False
+                                                         ),
+                                           [-1, architecture['Modules']['dnaseq']['input_width'], 4, 1]
+                                          )
+            dna_after_softmax = tf.transpose(dna_after_softmax,
+                                             perm=[0, 2, 1, 3]
+                                            )
             # generative model p(x|y), i.e. the decoder (shape=(batch_size,200))
-
             # (shape=(batch_size,784))
             dna_sample_dist = Bernoulli(logits=logits_dna)
-
-            # dna_before_softmax = Dense(architecture['Modules']['dnaseq']['input_width'], name='FC_before_softmax')(
-            #     c2d.representation)
-            # dna_before_softmax = tf.reshape(dna_before_softmax, [-1, 1, architecture['Modules']['dnaseq']['input_width'], 1])
+            # dna_before_softmax = Dense(architecture['Modules']['dnaseq']['input_width'],
+            #                             name='FC_before_softmax')(c2d.representation)
+            # dna_before_softmax = tf.reshape(dna_before_softmax,
+            #                                 [-1, 1, architecture['Modules']['dnaseq']['input_width'], 1])
             # dna_before_softmax = tf.nn.softmax(dna_before_softmax, name='softmax')
             # dna_after_softmax = tf.multiply(dna_before_softmax, dnaseq_ph, name='filter_dna')
-
         d2c_est = ConvolutionalContainer('dnaseq',
-                                         architecture=architecture, input=dna_after_softmax)
+                                         architecture=architecture,
+                                         input=dna_after_softmax
+                                        )
         with tf.variable_scope('dnaseq'):
             chipseq_before_softmax = Dense(architecture['Modules'][input_track]['input_height']*\
                                            architecture['Modules'][input_track]['input_width'],
@@ -207,8 +247,12 @@ def main(_):
         predicted_dict2 = {input_track: chipseq_pred}
 
         pickle.dump(predicted_dict,
-                    open(os.path.join(FLAGS.resultsDir, FLAGS.runName, 'pred_viz_{}.pck'.format(it)),
-                         "wb"))
+                    open(os.path.join(FLAGS.resultsDir,
+                                      FLAGS.runName,
+                                      'pred_viz_{}.pck'.format(it)
+                                     ),
+                    "wb")
+                   )
 
         if FLAGS.visualizePrediction == 'online':
             viz.plot_prediction(predicted_dict2, {input_track: input_for_pred},
